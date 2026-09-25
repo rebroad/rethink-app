@@ -1053,7 +1053,7 @@ class SummaryStatisticsFragment : Fragment(R.layout.fragment_summary_statistics)
             SummaryStatisticsType.MOST_CONNECTED_APPS,
             SummaryStatisticsType.MOST_BLOCKED_APPS ->
                 (if (type == SummaryStatisticsType.TOP_ACTIVE_CONNS) {
-                    item.unknownEndpointLabel(Constants.UNKNOWN_APP)
+                    item.unknownEndpointLabel()
                 } else null)
                     ?: item.appOrDnsName?.takeIf { it.isNotEmpty() }
                     ?: getString(R.string.network_log_app_name_unnamed, item.uid.toString())
