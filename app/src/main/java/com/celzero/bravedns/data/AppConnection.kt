@@ -28,9 +28,12 @@ data class AppConnection(
     val totalBytes: Long? = 0L
 )
 
-/** Display an unattributed connection by endpoint instead of the generic app-name placeholder. */
-fun AppConnection.unknownEndpointLabel(unknownAppName: String): String? {
-    if (appOrDnsName != unknownAppName || ipAddress.isBlank()) return null
+/** Display an unattributed connection by endpoint instead of a generic app-name label. */
+fun AppConnection.unknownEndpointLabel(): String? {
+    // TOP_ACTIVE_CONNS' query projects an endpoint only for unattributed flows.
+    // Treat that projection as the signal: appName can vary by locale or be
+    // resolved differently from the literal placeholder used in SQL.
+    if (ipAddress.isBlank()) return null
     if (port <= 0) return ipAddress
 
     val host = if (ipAddress.contains(':')) "[$ipAddress]" else ipAddress

@@ -11,7 +11,7 @@ class SummaryStatsEndpointLabelTest {
     fun unknownEndpointLabelIncludesPort() {
         assertEquals(
             "192.168.192.7:8022",
-            connection("192.168.192.7", 8022).unknownEndpointLabel("Unknown")
+            connection("192.168.192.7", 8022).unknownEndpointLabel()
         )
     }
 
@@ -19,13 +19,23 @@ class SummaryStatsEndpointLabelTest {
     fun unknownIpv6EndpointLabelBracketsAddress() {
         assertEquals(
             "[fd00::7]:8022",
-            connection("fd00::7", 8022).unknownEndpointLabel("Unknown")
+            connection("fd00::7", 8022).unknownEndpointLabel()
         )
     }
 
     @Test
-    fun identifiedAppsDoNotGetRenamed() {
-        assertNull(connection("192.168.192.7", 8022, "Termux").unknownEndpointLabel("Unknown"))
+    fun endpointLabelDoesNotDependOnAppNamePlaceholder() {
+        // The Stats DAO's projection decides whether this row is an endpoint
+        // row, so its label should not depend on an app-name placeholder.
+        assertEquals(
+            "192.168.192.7:8022",
+            connection("192.168.192.7", 8022, "Unknown (uid 0)").unknownEndpointLabel()
+        )
+    }
+
+    @Test
+    fun missingEndpointReturnsNull() {
+        assertNull(connection("", 0).unknownEndpointLabel())
     }
 
     private fun connection(ip: String, port: Int, name: String = "Unknown") = AppConnection(

@@ -466,7 +466,7 @@ class SummaryStatisticsAdapter(
 
         private fun unknownEndpointName(connection: AppConnection): String? {
             if (type != SummaryStatisticsType.TOP_ACTIVE_CONNS) return null
-            return connection.unknownEndpointLabel(Constants.UNKNOWN_APP)
+            return connection.unknownEndpointLabel()
         }
 
         private fun setProgress(appConnection: AppConnection) {
