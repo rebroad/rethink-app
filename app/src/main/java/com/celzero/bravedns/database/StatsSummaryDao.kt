@@ -239,12 +239,12 @@ interface StatsSummaryDao {
 
     @Query(
         """
-               SELECT uid as uid, 
-                   '' as ipAddress,
-                   0 as port,
+               SELECT uid as uid,
+                   CASE WHEN appName = 'Unknown' THEN ipAddress ELSE '' END as ipAddress,
+                   CASE WHEN appName = 'Unknown' THEN port ELSE 0 END as port,
                    COUNT(*) as count,
-                   0 as blocked, 
-                   '' as flag,
+                   0 as blocked,
+                   CASE WHEN appName = 'Unknown' THEN CAST(protocol AS TEXT) ELSE '' END as flag,
                    appName as appOrDnsName,
                    0 as downloadBytes,
                    0 as uploadBytes,
@@ -257,7 +257,11 @@ interface StatsSummaryDao {
                    AND synack = 0
                    AND message = ''
                    AND timeStamp > :to
-               GROUP BY appName
+               GROUP BY appName,
+                   CASE WHEN appName = 'Unknown'
+                       THEN uid || ':' || protocol || ':' || ipAddress || ':' || port
+                       ELSE ''
+                   END
                ORDER BY count DESC
                LIMIT 7
                """
@@ -266,12 +270,12 @@ interface StatsSummaryDao {
 
     @Query(
         """
-            SELECT uid as uid, 
-                '' as ipAddress,
-                0 as port,
+            SELECT uid as uid,
+                CASE WHEN appName = 'Unknown' THEN ipAddress ELSE '' END as ipAddress,
+                CASE WHEN appName = 'Unknown' THEN port ELSE 0 END as port,
                 COUNT(*) as count,
-                0 as blocked, 
-                '' as flag,
+                0 as blocked,
+                CASE WHEN appName = 'Unknown' THEN CAST(protocol AS TEXT) ELSE '' END as flag,
                 appName as appOrDnsName,
                 0 as downloadBytes,
                 0 as uploadBytes,
@@ -284,7 +288,11 @@ interface StatsSummaryDao {
                 AND synack = 0
                 AND message = ''
                 AND timeStamp >= :to
-            GROUP BY appName
+            GROUP BY appName,
+                CASE WHEN appName = 'Unknown'
+                    THEN uid || ':' || protocol || ':' || ipAddress || ':' || port
+                    ELSE ''
+                END
             ORDER BY count DESC
             """
     )

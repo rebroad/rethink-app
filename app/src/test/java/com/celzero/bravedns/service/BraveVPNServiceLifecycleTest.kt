@@ -7,6 +7,8 @@ import com.celzero.bravedns.database.RefreshDatabase
 import com.celzero.bravedns.shadows.LenientResourcesShadow
 import com.celzero.bravedns.shadows.ShadowBackend
 import com.celzero.bravedns.util.OrbotHelper
+import com.celzero.bravedns.zerotier.ZeroTierManager
+import com.celzero.bravedns.zerotier.ZeroTierState
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -26,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.flow.MutableStateFlow
 
 // SDK pinned: hermetic sandbox (see app/src/test/resources/robolectric.properties).
 // LenientResourcesShadow: without merged app resources, notification-channel
@@ -40,6 +43,7 @@ class BraveVPNServiceLifecycleTest : KoinTest {
     private val persistentState = mockk<PersistentState>(relaxed = true)
     private val rdb = mockk<RefreshDatabase>(relaxed = true)
     private val netLogTracker = mockk<NetLogTracker>(relaxed = true)
+    private val zeroTierManager = mockk<ZeroTierManager>(relaxed = true)
 
     @Before
     fun setup() {
@@ -47,6 +51,7 @@ class BraveVPNServiceLifecycleTest : KoinTest {
         // WorkManager must be initialized (the manifest initializer is not
         // active under Robolectric) or WorkManager.getInstance() throws.
         WorkManagerTestInitHelper.initializeTestWorkManager(RuntimeEnvironment.getApplication())
+        every { zeroTierManager.state } returns MutableStateFlow(ZeroTierState())
         mockkObject(IpRulesManager)
         startKoin {
             modules(module {
@@ -55,6 +60,7 @@ class BraveVPNServiceLifecycleTest : KoinTest {
                 single { persistentState }
                 single { rdb }
                 single { netLogTracker }
+                single { zeroTierManager }
             })
         }
         mockkObject(VpnController)

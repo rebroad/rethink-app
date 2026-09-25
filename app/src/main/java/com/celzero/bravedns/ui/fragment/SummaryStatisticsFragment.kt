@@ -31,6 +31,7 @@ import com.celzero.bravedns.R
 import com.celzero.bravedns.adapter.SummaryStatisticsAdapter
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.data.AppConnection
+import com.celzero.bravedns.data.unknownEndpointLabel
 import com.celzero.bravedns.data.DataUsageSummary
 import com.celzero.bravedns.database.EventSource
 import com.celzero.bravedns.database.EventType
@@ -1051,7 +1052,10 @@ class SummaryStatisticsFragment : Fragment(R.layout.fragment_summary_statistics)
             SummaryStatisticsType.TOP_ACTIVE_CONNS,
             SummaryStatisticsType.MOST_CONNECTED_APPS,
             SummaryStatisticsType.MOST_BLOCKED_APPS ->
-                item.appOrDnsName?.takeIf { it.isNotEmpty() }
+                (if (type == SummaryStatisticsType.TOP_ACTIVE_CONNS) {
+                    item.unknownEndpointLabel(Constants.UNKNOWN_APP)
+                } else null)
+                    ?: item.appOrDnsName?.takeIf { it.isNotEmpty() }
                     ?: getString(R.string.network_log_app_name_unnamed, item.uid.toString())
             SummaryStatisticsType.MOST_CONNECTED_ASN,
             SummaryStatisticsType.MOST_BLOCKED_ASN ->

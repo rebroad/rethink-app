@@ -1582,6 +1582,8 @@
     <string name="temp_allow_desc" translatable="false">Temporarily allow this app. Auto-reverts after 15 minutes.</string>
     <string name="temp_allow_desc_with_time" translatable="false">Last allowed: %1$s</string>
     <string name="temp_allow_active" translatable="false">Active until %1$s</string>
+    <string name="ct_temp_ip_allow_removed" translatable="false">Temporary IP:port allow removed</string>
+    <string name="ct_temp_ip_allow_added" translatable="false">IP:port allowed for 15 minutes</string>
 
     <!-- app info bottom sheet -->
     <string name="bsac_title_desc" translatable="true">Rules apply to this app only.</string>
@@ -2864,6 +2866,18 @@
     <string name="fs_configure_proxy_desc" translatable="true">WireGuard, SOCKS5, and HTTP proxy routing</string>
     <string name="fs_configure_others_desc" translatable="true">Appearance, notifications, and more</string>
     <string name="fs_configure_advanced_desc" translatable="true">Developer tools and diagnostics</string>
+    <string name="fs_configure_zerotier_desc" translatable="true">Join a ZeroTier network and view node status</string>
+    <string name="zerotier_title" translatable="true">ZeroTier</string>
+    <string name="zerotier_network_id_hint" translatable="true">Network ID (16 hexadecimal digits)</string>
+    <string name="zerotier_join" translatable="true">Join network</string>
+    <string name="zerotier_leave" translatable="true">Leave</string>
+    <string name="zerotier_node_online" translatable="true">Node online</string>
+    <string name="zerotier_node_offline" translatable="true">Node offline</string>
+    <string name="zerotier_host_id">Host ID: %1$s</string>
+    <string name="zerotier_networks_heading">Networks</string>
+    <string name="zerotier_scan_qr">Scan QR code</string>
+    <string name="zerotier_scan_qr_prompt">Scan a ZeroTier network QR code</string>
+    <string name="zerotier_qr_invalid">QR code does not contain one network ID</string>
     <string name="fs_configure_logs_desc" translatable="true">Review DNS queries and connection logs</string>
 
     <!-- DNS bypass mode bottom sheet -->
@@ -2991,4 +3005,7 @@
     <string name="dolphin_quote_lost_we_meant_it" translatable="false">Lost? We meant to do that.</string>
     <string name="dolphin_quote_nothing_suspicious" translatable="false">Nothing suspicious. Just swimming.</string>
 
+    <string name="zerotier_copy_cli_token">Copy CLI token</string>
+    <string name="zerotier_cli_token_copied">ZeroTier CLI token copied</string>
+    <string name="zerotier_cli_help">In a terminal on this device, run: zerotier-cli -H127.0.0.1 -p9993 -T&lt;token&gt; status</string>
 </resources>

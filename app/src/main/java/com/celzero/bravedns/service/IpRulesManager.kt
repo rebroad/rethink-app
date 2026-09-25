@@ -32,6 +32,9 @@ import inet.ipaddr.IPAddress
 import inet.ipaddr.IPAddressString
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 object IpRulesManager : KoinComponent {
 
@@ -51,6 +54,16 @@ object IpRulesManager : KoinComponent {
     // especially useful for storing results of subnetMatch() function as it is expensive
     private val resultsCache: Cache<CacheKey, IpRuleStatus> =
         CacheBuilder.newBuilder().maximumSize(CACHE_MAX_SIZE).build()
+
+    private data class TemporaryRuleKey(val uid: Int, val ip: String, val port: Int)
+
+    private val temporaryTrustExpiry = ConcurrentHashMap<TemporaryRuleKey, Long>()
+    private val temporaryTrustScheduler = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "temporary-ip-rule-expiry").apply { isDaemon = true }
+    }
+
+    private const val TEMPORARY_TRUST_DURATION_MS =
+        FirewallManager.TEMP_ALLOW_DEFAULT_MINUTES * 60 * 1000L
 
     private val selectedCCs = mutableSetOf<String>()
 
@@ -325,6 +338,9 @@ object IpRulesManager : KoinComponent {
     }
 
     fun hasRule(uid: Int, ipstr: String, port: Int): IpRuleStatus {
+        getTemporaryTrustExpiry(uid, ipstr, port)?.let {
+            if (it > System.currentTimeMillis()) return IpRuleStatus.TRUST
+        }
         val pair = hostAddr(ipstr, port)
         val ipNetPort = joinIpNetPort(normalize(pair.first) + pair.second)
         val ck = CacheKey(ipNetPort, uid)
@@ -426,6 +442,8 @@ object IpRulesManager : KoinComponent {
     fun getMostSpecificRuleMatch(uid: Int, ipstr: String, port: Int = 0): IpRuleStatus {
         val k = treeKey(ipstr)
         if (!k.isNullOrEmpty()) {
+            temporaryTrustStatus(uid, k, port)?.let { return it }
+            if (port != 0) temporaryTrustStatus(uid, k, 0)?.let { return it }
             val vlike = treeValLike(uid, port)
             // rules at the end of the list have higher precedence as they're more specific
             // (think: 0.0.0.0/0 vs 1.1.1.1/32)
@@ -450,6 +468,57 @@ object IpRulesManager : KoinComponent {
             }
         }
         return IpRuleStatus.NONE
+    }
+
+    /** Temporarily trusts one IP/port endpoint. The caller selects the rule scope UID. */
+    fun addTemporaryTrust(uid: Int, ipstr: String, port: Int): Long? {
+        val key = temporaryRuleKey(uid, ipstr, port) ?: return null
+        val expiresAt = System.currentTimeMillis() + TEMPORARY_TRUST_DURATION_MS
+        temporaryTrustExpiry[key] = expiresAt
+        resultsCache.invalidateAll()
+        temporaryTrustScheduler.schedule({
+            if (temporaryTrustExpiry.remove(key, expiresAt)) resultsCache.invalidateAll()
+        }, TEMPORARY_TRUST_DURATION_MS, TimeUnit.MILLISECONDS)
+        return expiresAt
+    }
+
+    fun removeTemporaryTrust(uid: Int, ipstr: String, port: Int) {
+        val exact = temporaryRuleKey(uid, ipstr, port)
+        val wildcard = temporaryRuleKey(uid, ipstr, 0)
+        exact?.let { temporaryTrustExpiry.remove(it) }
+        wildcard?.let { temporaryTrustExpiry.remove(it) }
+        resultsCache.invalidateAll()
+    }
+
+    fun getTemporaryTrustExpiry(uid: Int, ipstr: String, port: Int): Long? {
+        val exact = temporaryRuleKey(uid, ipstr, port)
+        val wildcard = temporaryRuleKey(uid, ipstr, 0)
+        val now = System.currentTimeMillis()
+        return listOfNotNull(exact, wildcard).distinct().firstNotNullOfOrNull { key ->
+            val expiry = temporaryTrustExpiry[key] ?: return@firstNotNullOfOrNull null
+            if (expiry <= now) {
+                temporaryTrustExpiry.remove(key, expiry)
+                null
+            } else {
+                expiry
+            }
+        }
+    }
+
+    private fun temporaryRuleKey(uid: Int, ipstr: String, port: Int): TemporaryRuleKey? {
+        if (port !in 0..65535) return null
+        val ip = treeKey(ipstr) ?: return null
+        return TemporaryRuleKey(uid, ip, port)
+    }
+
+    private fun temporaryTrustStatus(uid: Int, ipKey: String, port: Int): IpRuleStatus? {
+        val key = TemporaryRuleKey(uid, ipKey, port)
+        val expiry = temporaryTrustExpiry[key] ?: return null
+        if (expiry <= System.currentTimeMillis()) {
+            temporaryTrustExpiry.remove(key, expiry)
+            return null
+        }
+        return IpRuleStatus.TRUST
     }
 
     private fun convertStringToTreeVal(s: String): TreeVal? {
