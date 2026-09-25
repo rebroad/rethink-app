@@ -147,7 +147,7 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         // setup click and item selected listeners
         setupClickListeners()
         // updates the ip rules button
-        info?.let { updateIpRulesUi(it.uid, it.ipAddress) }
+        info?.let { updateIpRulesUi(it.uid, it.ipAddress, it.port) }
         // updates the value from dns request cache if available
         updateDnsIfAvailable()
     }
@@ -411,6 +411,8 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         b.bsConnRuleRowApp.visibility = View.GONE
         b.bsConnUnknownAppCheck.isChecked = persistentState.getBlockUnknownConnections()
         b.bsConnTrackAppName.text = info?.appName.orEmpty()
+        b.bsConnTemporaryIpAllow.visibility = View.VISIBLE
+        updateTemporaryIpAllowButton()
     }
 
     private fun setupClickListeners() {
@@ -426,6 +428,25 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
 
         b.bsConnTrackAppInfo.setOnClickListener { showFirewallRulesDialog(info?.blockedByRule) }
 
+        b.bsConnTemporaryIpAllow.setOnClickListener {
+            val currentInfo = info ?: return@setOnClickListener
+            val ruleUid = ipRuleUid(currentInfo)
+            val active = IpRulesManager.getTemporaryTrustExpiry(
+                ruleUid,
+                currentInfo.ipAddress,
+                currentInfo.port
+            ) != null
+            if (active) {
+                IpRulesManager.removeTemporaryTrust(ruleUid, currentInfo.ipAddress, currentInfo.port)
+                showToastUiCentered(requireContext(), getString(R.string.ct_temp_ip_allow_removed), Toast.LENGTH_SHORT)
+            } else if (
+                IpRulesManager.addTemporaryTrust(ruleUid, currentInfo.ipAddress, currentInfo.port) != null
+            ) {
+                showToastUiCentered(requireContext(), getString(R.string.ct_temp_ip_allow_added), Toast.LENGTH_SHORT)
+            }
+            updateTemporaryIpAllowButton()
+        }
+
         b.bsConnTrackAppNameHeader.setOnClickListener {
             val uid = info?.uid ?: return@setOnClickListener
             io {
@@ -433,11 +454,6 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
                 uiCtx {
                     // case: app is uninstalled but still available in RethinkDNS database
                     if (ai == null || uid == Constants.INVALID_UID) {
-                        showToastUiCentered(
-                            requireContext(),
-                            getString(R.string.ct_bs_app_info_error),
-                            Toast.LENGTH_SHORT
-                        )
                         return@uiCtx
                     }
                     openAppDetailActivity(uid)
@@ -597,11 +613,17 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         }
     }
 
-    private fun updateIpRulesUi(uid: Int, ipAddress: String) {
+    private fun updateIpRulesUi(uid: Int, ipAddress: String, port: Int) {
+        val ruleUid = if (uid == Constants.INVALID_UID) Constants.UID_EVERYBODY else uid
         io {
-            val rule = IpRulesManager.getMostSpecificRuleMatch(uid, ipAddress)
+            val exactRule = IpRulesManager.getMostSpecificRuleMatch(ruleUid, ipAddress, port)
+            val rule = if (exactRule == IpRulesManager.IpRuleStatus.NONE && port > 0) {
+                IpRulesManager.getMostSpecificRuleMatch(ruleUid, ipAddress)
+            } else {
+                exactRule
+            }
             uiCtx {
-                b.bsConnIpRuleAddress.text = ipAddress
+                b.bsConnIpRuleAddress.text = endpointLabel(ipAddress, port)
                 val (text, colorAttr) =
                     when (rule) {
                         IpRulesManager.IpRuleStatus.NONE ->
@@ -617,6 +639,47 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
                 renderRuleState(b.bsConnIpRuleState, text, colorAttr)
                 b.bsConnIpRuleSwitch.setRuleState(ipRuleSwitchState(rule))
             }
+        }
+    }
+
+    private fun ipRuleUid(connection: ConnectionTracker): Int =
+        if (connection.uid == Constants.INVALID_UID) Constants.UID_EVERYBODY else connection.uid
+
+    private fun endpointLabel(ipAddress: String, port: Int): String {
+        if (port <= 0) return ipAddress
+        val host = if (ipAddress.contains(':')) "[$ipAddress]" else ipAddress
+        return "$host:$port"
+    }
+
+    private fun updateTemporaryIpAllowButton() {
+        val currentInfo = info ?: return
+        val ruleUid = ipRuleUid(currentInfo)
+        val expiresAt = IpRulesManager.getTemporaryTrustExpiry(
+            ruleUid,
+            currentInfo.ipAddress,
+            currentInfo.port
+        )
+        b.bsConnTemporaryIpAllow.text = if (expiresAt == null) {
+            getString(R.string.temp_allow_label)
+        } else {
+            val relative = DateUtils.getRelativeTimeSpanString(
+                expiresAt,
+                System.currentTimeMillis(),
+                DateUtils.MINUTE_IN_MILLIS,
+                DateUtils.FORMAT_ABBREV_RELATIVE
+            )
+            getString(R.string.lbl_remove)
+        }
+        b.bsConnTemporaryIpAllow.contentDescription = if (expiresAt == null) {
+            getString(R.string.temp_allow_label)
+        } else {
+            val relative = DateUtils.getRelativeTimeSpanString(
+                expiresAt,
+                System.currentTimeMillis(),
+                DateUtils.MINUTE_IN_MILLIS,
+                DateUtils.FORMAT_ABBREV_RELATIVE
+            )
+            getString(R.string.temp_allow_active, relative)
         }
     }
 
@@ -665,7 +728,13 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
         io {
             try {
                 val current =
-                    IpRulesManager.getMostSpecificRuleMatch(currentInfo.uid, currentInfo.ipAddress)
+                    IpRulesManager.getMostSpecificRuleMatch(
+                        ipRuleUid(currentInfo), currentInfo.ipAddress, currentInfo.port
+                    ).let { exact ->
+                        if (exact == IpRulesManager.IpRuleStatus.NONE && currentInfo.port > 0) {
+                            IpRulesManager.getMostSpecificRuleMatch(ipRuleUid(currentInfo), currentInfo.ipAddress)
+                        } else exact
+                    }
                 val next =
                     when (current) {
                         IpRulesManager.IpRuleStatus.NONE -> IpRulesManager.IpRuleStatus.BLOCK
@@ -848,8 +917,15 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
     private suspend fun applyIpRule(ipRuleStatus: IpRulesManager.IpRuleStatus) {
         val currentInfo = info ?: return
         // no need to apply rule, prev selection and current selection are same
+        val ruleUid = ipRuleUid(currentInfo)
+        val exactRule = IpRulesManager.getMostSpecificRuleMatch(
+            ruleUid, currentInfo.ipAddress, currentInfo.port
+        )
+        val currentRule = if (exactRule == IpRulesManager.IpRuleStatus.NONE && currentInfo.port > 0) {
+            IpRulesManager.getMostSpecificRuleMatch(ruleUid, currentInfo.ipAddress)
+        } else exactRule
         if (
-            IpRulesManager.getMostSpecificRuleMatch(currentInfo.uid, currentInfo.ipAddress) ==
+            currentRule ==
                 ipRuleStatus
         )
             return
@@ -869,9 +945,9 @@ class ConnTrackerBottomSheet : BaseBottomSheetDialogFragment(), KoinComponent {
             }
             return
         }
-        IpRulesManager.addIpRule(currentInfo.uid, ip, /*wildcard-port*/ 0, ipRuleStatus, proxyId = "", proxyCC = "")
-        Logger.i(LOG_TAG_FIREWALL, "apply ip-rule for ${currentInfo.uid}, $ip, ${ipRuleStatus.name}")
-        logEvent("IP rule changed", "UID: ${currentInfo.uid}, IP: $ip, IpRuleStatus: ${ipRuleStatus.name}")
+        IpRulesManager.addIpRule(ruleUid, ip, currentInfo.port, ipRuleStatus, proxyId = "", proxyCC = "")
+        Logger.i(LOG_TAG_FIREWALL, "apply ip-rule for $ruleUid, $ip:${currentInfo.port}, ${ipRuleStatus.name}")
+        logEvent("IP rule changed", "UID: $ruleUid, IP: $ip:${currentInfo.port}, IpRuleStatus: ${ipRuleStatus.name}")
         uiCtx {
             val (text, colorAttr) =
                 when (ipRuleStatus) {

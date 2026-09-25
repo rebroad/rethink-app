@@ -27,3 +27,12 @@ data class AppConnection(
     val uploadBytes: Long? = 0L,
     val totalBytes: Long? = 0L
 )
+
+/** Display an unattributed connection by endpoint instead of the generic app-name placeholder. */
+fun AppConnection.unknownEndpointLabel(unknownAppName: String): String? {
+    if (appOrDnsName != unknownAppName || ipAddress.isBlank()) return null
+    if (port <= 0) return ipAddress
+
+    val host = if (ipAddress.contains(':')) "[$ipAddress]" else ipAddress
+    return "$host:$port"
+}

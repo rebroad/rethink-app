@@ -43,7 +43,9 @@ import com.bumptech.glide.request.transition.Transition
 import com.celzero.bravedns.R
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.data.AppConnection
+import com.celzero.bravedns.data.unknownEndpointLabel
 import com.celzero.bravedns.database.AppInfo
+import com.celzero.bravedns.database.ConnectionTracker
 import com.celzero.bravedns.databinding.ListItemStatisticsSummaryBinding
 import com.celzero.bravedns.glide.FavIconDownloader
 import com.celzero.bravedns.service.FirewallManager
@@ -52,6 +54,7 @@ import com.celzero.bravedns.ui.activity.AppInfoActivity
 import com.celzero.bravedns.ui.activity.DomainConnectionsActivity
 import com.celzero.bravedns.ui.activity.NetworkLogsActivity
 import com.celzero.bravedns.ui.bottomsheet.AppDomainRulesBottomSheet
+import com.celzero.bravedns.ui.bottomsheet.ConnTrackerBottomSheet
 import com.celzero.bravedns.ui.fragment.SummaryStatisticsFragment.SummaryStatisticsType
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.UIUtils.fetchToggleBtnColors
@@ -60,6 +63,7 @@ import com.celzero.bravedns.util.Utilities
 import com.celzero.bravedns.util.Utilities.getFlag
 import com.celzero.bravedns.util.Utilities.isAtleastN
 import com.celzero.bravedns.viewmodel.SummaryStatisticsViewModel
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,8 +125,12 @@ class SummaryStatisticsAdapter(
         private fun keyOf(item: AppConnection, type: SummaryStatisticsType): String {
             return when (type) {
                 SummaryStatisticsType.MOST_CONNECTED_APPS,
-                SummaryStatisticsType.MOST_BLOCKED_APPS,
-                SummaryStatisticsType.TOP_ACTIVE_CONNS -> "uid:${item.uid}"
+                SummaryStatisticsType.MOST_BLOCKED_APPS -> "uid:${item.uid}"
+                SummaryStatisticsType.TOP_ACTIVE_CONNS -> if (item.appOrDnsName == Constants.UNKNOWN_APP) {
+                    "uid:${item.uid}:${item.flag}:${item.ipAddress}:${item.port}"
+                } else {
+                    "uid:${item.uid}"
+                }
                 SummaryStatisticsType.MOST_CONNECTED_ASN,
                 SummaryStatisticsType.MOST_BLOCKED_ASN,
                 SummaryStatisticsType.MOST_CONTACTED_DOMAINS,
@@ -440,7 +448,7 @@ class SummaryStatisticsAdapter(
             val name = if (!cachedAppName.isNullOrEmpty()) {
                 cachedAppName
             } else if (!appConnection.appOrDnsName.isNullOrEmpty()) {
-                appConnection.appOrDnsName
+                unknownEndpointName(appConnection) ?: appConnection.appOrDnsName
             } else {
                 context.getString(
                     R.string.network_log_app_name_unnamed,
@@ -454,6 +462,11 @@ class SummaryStatisticsAdapter(
                 itemBinding.ssDataUsage.visibility = View.VISIBLE
                 itemBinding.ssDataUsage.text = name
             }
+        }
+
+        private fun unknownEndpointName(connection: AppConnection): String? {
+            if (type != SummaryStatisticsType.TOP_ACTIVE_CONNS) return null
+            return connection.unknownEndpointLabel(Constants.UNKNOWN_APP)
         }
 
         private fun setProgress(appConnection: AppConnection) {
@@ -492,7 +505,16 @@ class SummaryStatisticsAdapter(
             itemBinding.ssContainer.setOnClickListener {
                 when (type) {
                     SummaryStatisticsType.TOP_ACTIVE_CONNS -> {
-                        startAppInfoActivity(appConnection)
+                        io {
+                            val appInfo = FirewallManager.getAppInfoByUid(appConnection.uid)
+                            uiCtx {
+                                if (appInfo != null) {
+                                    startAppInfoActivity(appConnection)
+                                } else {
+                                    showUnknownConnectionDetails(appConnection)
+                                }
+                            }
+                        }
                     }
                     SummaryStatisticsType.MOST_CONNECTED_APPS -> {
                         io {
@@ -597,6 +619,29 @@ class SummaryStatisticsAdapter(
             val intent = Intent(context, AppInfoActivity::class.java)
             intent.putExtra(AppInfoActivity.INTENT_UID, appConnection.uid)
             context.startActivity(intent)
+        }
+
+        private fun showUnknownConnectionDetails(appConnection: AppConnection) {
+            if (context !is AppCompatActivity) return
+
+            val connection = ConnectionTracker().apply {
+                appName = unknownEndpointName(appConnection) ?: Constants.UNKNOWN_APP
+                uid = appConnection.uid
+                ipAddress = appConnection.ipAddress
+                port = appConnection.port
+                protocol = appConnection.flag.toIntOrNull() ?: 0
+                isBlocked = appConnection.blocked
+                timeStamp = System.currentTimeMillis()
+            }
+            val bottomSheet = ConnTrackerBottomSheet()
+            val args = Bundle().apply {
+                putString(
+                    ConnTrackerBottomSheet.INSTANCE_STATE_IPDETAILS,
+                    Gson().toJson(connection)
+                )
+            }
+            bottomSheet.arguments = args
+            bottomSheet.show(context.supportFragmentManager, bottomSheet.tag)
         }
 
         /**
