@@ -15,6 +15,8 @@
  */
 package com.celzero.bravedns.data
 
+import com.celzero.bravedns.util.Constants
+
 data class AppConnection(
     val uid: Int,
     val ipAddress: String,
@@ -30,9 +32,6 @@ data class AppConnection(
 
 /** Display an unattributed connection by endpoint instead of a generic app-name label. */
 fun AppConnection.unknownEndpointLabel(): String? {
-    // TOP_ACTIVE_CONNS' query projects an endpoint only for unattributed flows.
-    // Treat that projection as the signal: appName can vary by locale or be
-    // resolved differently from the literal placeholder used in SQL.
     if (ipAddress.isBlank()) return null
     if (port <= 0) return ipAddress
 
@@ -40,9 +39,13 @@ fun AppConnection.unknownEndpointLabel(): String? {
     return "$host:$port"
 }
 
-/** Prefer a projected endpoint over cached app resolution for unattributed Stats rows. */
+private fun String?.isGenericUnknownName(): Boolean =
+    this.isNullOrBlank() || this.equals(Constants.UNKNOWN_APP, ignoreCase = true) ||
+        this.startsWith("${Constants.UNKNOWN_APP} (", ignoreCase = true)
+
+/** Use the endpoint for unresolved Stats rows, preserving a real app name when available. */
 fun AppConnection.statsAppLabel(resolvedAppName: String?): String? {
-    return unknownEndpointLabel()
-        ?: resolvedAppName?.takeIf { it.isNotEmpty() }
-        ?: appOrDnsName?.takeIf { it.isNotEmpty() }
+    val appName = resolvedAppName?.takeUnless { it.isGenericUnknownName() }
+        ?: appOrDnsName?.takeUnless { it.isGenericUnknownName() }
+    return appName ?: unknownEndpointLabel()
 }
