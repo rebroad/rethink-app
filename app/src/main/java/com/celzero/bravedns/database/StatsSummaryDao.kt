@@ -240,8 +240,8 @@ interface StatsSummaryDao {
     @Query(
         """
                SELECT uid as uid,
-                   CASE WHEN appName = 'Unknown' THEN ipAddress ELSE '' END as ipAddress,
-                   CASE WHEN appName = 'Unknown' THEN port ELSE 0 END as port,
+                   ipAddress as ipAddress,
+                   port as port,
                    COUNT(*) as count,
                    0 as blocked,
                    CASE WHEN appName = 'Unknown' THEN CAST(protocol AS TEXT) ELSE '' END as flag,
