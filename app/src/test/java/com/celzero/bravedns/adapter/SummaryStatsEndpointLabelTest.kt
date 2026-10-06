@@ -1,6 +1,7 @@
 package com.celzero.bravedns.adapter
 
 import com.celzero.bravedns.data.AppConnection
+import com.celzero.bravedns.data.statsAppLabel
 import com.celzero.bravedns.data.unknownEndpointLabel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -30,6 +31,22 @@ class SummaryStatsEndpointLabelTest {
         assertEquals(
             "192.168.192.7:8022",
             connection("192.168.192.7", 8022, "Unknown (uid 0)").unknownEndpointLabel()
+        )
+    }
+
+    @Test
+    fun projectedEndpointPrecedesCachedUnknownAppName() {
+        assertEquals(
+            "192.168.192.7:8022",
+            connection("192.168.192.7", 8022).statsAppLabel("Unknown")
+        )
+    }
+
+    @Test
+    fun cachedAppNameRemainsForRowsWithoutProjectedEndpoint() {
+        assertEquals(
+            "Termux",
+            connection("", 0, "Unknown").statsAppLabel("Termux")
         )
     }
 

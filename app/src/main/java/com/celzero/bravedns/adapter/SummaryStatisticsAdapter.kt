@@ -43,6 +43,7 @@ import com.bumptech.glide.request.transition.Transition
 import com.celzero.bravedns.R
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.data.AppConnection
+import com.celzero.bravedns.data.statsAppLabel
 import com.celzero.bravedns.data.unknownEndpointLabel
 import com.celzero.bravedns.database.AppInfo
 import com.celzero.bravedns.database.ConnectionTracker
@@ -382,6 +383,16 @@ class SummaryStatisticsAdapter(
         }
 
         private fun setName(appConnection: AppConnection, seq: Long) {
+            // TOP_ACTIVE_CONNS can display a system uid as "Unknown" while
+            // app identity resolution is still running. Render its projected
+            // endpoint immediately; waiting for the uid cache leaves the
+            // placeholder visible on the Stats card.
+            if (type == SummaryStatisticsType.TOP_ACTIVE_CONNS &&
+                appConnection.unknownEndpointLabel() != null
+            ) {
+                applyAppName(appConnection, appNameByUid[appConnection.uid])
+                return
+            }
             when (type) {
                 SummaryStatisticsType.TOP_ACTIVE_CONNS,
                 SummaryStatisticsType.MOST_CONNECTED_APPS,
@@ -445,16 +456,13 @@ class SummaryStatisticsAdapter(
         }
 
         private fun applyAppName(appConnection: AppConnection, cachedAppName: String?) {
-            val name = if (!cachedAppName.isNullOrEmpty()) {
-                cachedAppName
-            } else if (!appConnection.appOrDnsName.isNullOrEmpty()) {
-                unknownEndpointName(appConnection) ?: appConnection.appOrDnsName
-            } else {
-                context.getString(
+            // Resolve the projected endpoint before the uid cache: unknown or
+            // system uids can resolve to a generic "Unknown" label.
+            val name = appConnection.statsAppLabel(cachedAppName)
+                ?: context.getString(
                     R.string.network_log_app_name_unnamed,
                     appConnection.uid.toString()
                 )
-            }
             if (type == SummaryStatisticsType.MOST_CONNECTED_APPS) {
                 itemBinding.ssName.visibility = View.VISIBLE
                 itemBinding.ssName.text = name

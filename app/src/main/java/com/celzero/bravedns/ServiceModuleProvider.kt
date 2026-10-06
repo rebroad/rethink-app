@@ -29,6 +29,9 @@ import com.celzero.bravedns.service.AppUpdater
 import com.celzero.bravedns.service.InAppMessageProvider
 import com.celzero.bravedns.service.NoOpInAppMessageProvider
 import com.celzero.bravedns.service.ServiceModule
+import com.celzero.bravedns.zerotier.AndroidZeroTierPacketAdapter
+import com.celzero.bravedns.zerotier.ZeroTierManager
+import com.celzero.bravedns.zerotier.ZeroTierPacketAdapter
 import com.celzero.bravedns.util.Constants
 import com.celzero.bravedns.util.OrbotHelper
 import com.celzero.bravedns.viewmodel.ViewModelModule
@@ -63,6 +66,11 @@ private val workerModule = module { single { WorkScheduler(androidContext(), get
 
 private val schedulerModule = module { single { ScheduleManager(androidContext()) } }
 
+private val zeroTierModule = module {
+    single<ZeroTierPacketAdapter> { AndroidZeroTierPacketAdapter() }
+    single { ZeroTierManager(androidContext(), get()) }
+}
+
 private val stateMachine = module {
     single { SubscriptionStateMachineV2() }
     single { StateMachineDatabaseSyncService() }
@@ -80,6 +88,7 @@ val AppModules: List<Module> by lazy {
         addAll(stateMachineModules)
         addAll(updaterModules)
         add(schedulerModule)
+        add(zeroTierModule)
         add(workerModule)
         add(orbotHelperModule)
         add(appDownloadManagerModule)

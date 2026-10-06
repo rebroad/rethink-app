@@ -33,6 +33,7 @@ import com.celzero.bravedns.ui.activity.MiscSettingsActivity
 import com.celzero.bravedns.ui.activity.NetworkLogsActivity
 import com.celzero.bravedns.ui.activity.ProxySettingsActivity
 import com.celzero.bravedns.ui.activity.TunnelSettingsActivity
+import com.celzero.bravedns.ui.activity.ZeroTierActivity
 import com.celzero.bravedns.util.Utilities
 
 class ConfigureFragment : Fragment(R.layout.fragment_configure) {
@@ -55,7 +56,8 @@ class ConfigureFragment : Fragment(R.layout.fragment_configure) {
         OTHERS,
         LOGS,
         ANTI_CENSORSHIP,
-        ADVANCED
+        ADVANCED,
+        ZEROTIER
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -128,6 +130,8 @@ class ConfigureFragment : Fragment(R.layout.fragment_configure) {
             // open developer options configuration
             startActivity(ScreenType.ADVANCED)
         }
+
+        b.fsZerotierCard.setOnClickListener { startActivity(ScreenType.ZEROTIER) }
     }
 
     private fun startActivity(type: ScreenType) {
@@ -142,6 +146,7 @@ class ConfigureFragment : Fragment(R.layout.fragment_configure) {
                 ScreenType.LOGS -> Intent(requireContext(), NetworkLogsActivity::class.java)
                 ScreenType.ANTI_CENSORSHIP -> Intent(requireContext(), AntiCensorshipActivity::class.java)
                 ScreenType.ADVANCED -> Intent(requireContext(), AdvancedSettingActivity::class.java)
+                ScreenType.ZEROTIER -> Intent(requireContext(), ZeroTierActivity::class.java)
             }
 
         if (type == ScreenType.OTHERS) {
