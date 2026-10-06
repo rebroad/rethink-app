@@ -17,6 +17,7 @@ import com.zerotier.sdk.PathChecker
 import com.zerotier.sdk.VirtualNetworkConfig
 import com.zerotier.sdk.VirtualNetworkConfigListener
 import com.zerotier.sdk.VirtualNetworkConfigOperation
+import com.zerotier.sdk.VirtualNetworkStatus
 import com.zerotier.sdk.VirtualNetworkFrameListener
 import com.zerotier.sdk.ResultCode
 import java.io.File
@@ -70,6 +71,8 @@ interface ZeroTierTunnelApi {
 fun interface ZeroTierWirePacketReceiver {
     fun onWirePacket(localSocket: Long, remote: InetSocketAddress, packet: ByteArray)
 }
+
+internal data class ZeroTierMulticastSubscription(val mac: Long, val adi: Long)
 
 data class ZeroTierNetworkState(
     val networkId: String,
@@ -173,8 +176,8 @@ class ZeroTierManager(
     private var node: Node? = null
     private var taskJob: Job? = null
     private val joined = linkedSetOf<Long>()
-    private val pendingMulticast = linkedMapOf<Long, Set<MulticastSubscription>>()
-    private val activeMulticast = linkedMapOf<Long, Set<MulticastSubscription>>()
+    private val pendingMulticast = linkedMapOf<Long, Set<ZeroTierMulticastSubscription>>()
+    private val activeMulticast = linkedMapOf<Long, Set<ZeroTierMulticastSubscription>>()
 
     suspend fun start() = mutex.withLock {
         ensureControlServer()
@@ -209,7 +212,7 @@ class ZeroTierManager(
                         pendingMulticast[nwid] = if (
                             op == VirtualNetworkConfigOperation.VIRTUAL_NETWORK_CONFIG_OPERATION_DESTROY ||
                             op == VirtualNetworkConfigOperation.VIRTUAL_NETWORK_CONFIG_OPERATION_DOWN
-                        ) emptySet() else config?.assignedAddresses.orEmpty().mapNotNull { resolutionGroup(it) }.toSet()
+                        ) emptySet() else resolutionGroups(config)
                     }
                     scope.launch { mutex.withLock { node?.let(::refreshSnapshot) } }
                     callbackResult
@@ -230,6 +233,15 @@ class ZeroTierManager(
                 scope.launch { processVirtualEthernetFrame(networkId, frame) }
             }
             joined.forEach { n.join(it) }
+            val restoredMulticast = multicastSubscriptions(n.networkConfigs().orEmpty().asIterable())
+            synchronized(pendingMulticast) {
+                restoredMulticast.forEach { (networkId, groups) ->
+                    // A DOWN or DESTROY callback received during join takes precedence over
+                    // the cached config snapshot. On process restart, the snapshot restores
+                    // address-resolution subscriptions lost with the previous Node instance.
+                    pendingMulticast.putIfAbsent(networkId, groups)
+                }
+            }
             started.set(true)
             refreshSnapshot(n)
             taskJob = scope.launch {
@@ -444,19 +456,31 @@ class ZeroTierManager(
         fun formatNetworkId(value: Long): String = value.toULong().toString(16).padStart(16, '0')
         fun formatHostId(value: Long): String = (value and 0xffffffffffL).toString(16).padStart(10, '0')
 
-        internal data class MulticastSubscription(val mac: Long, val adi: Long)
+        /** Rebuild per-network address-resolution memberships from persisted SDK config. */
+        internal fun multicastSubscriptions(
+            configurations: Iterable<VirtualNetworkConfig>
+        ): Map<Long, Set<ZeroTierMulticastSubscription>> = configurations.associate { config ->
+            config.nwid to resolutionGroups(config)
+        }
+
+        private fun resolutionGroups(config: VirtualNetworkConfig?): Set<ZeroTierMulticastSubscription> =
+            if (config?.status == VirtualNetworkStatus.NETWORK_STATUS_OK) {
+                config.assignedAddresses.orEmpty().mapNotNull(::resolutionGroup).toSet()
+            } else {
+                emptySet()
+            }
 
         /** Build ZeroTier's address-resolution subscription for one SDK-assigned IP. */
-        internal fun resolutionGroup(address: InetSocketAddress): MulticastSubscription? {
+        internal fun resolutionGroup(address: InetSocketAddress): ZeroTierMulticastSubscription? {
             val bytes = address.address?.address ?: return null
             return when {
-                address.address is Inet4Address && bytes.size == 4 -> MulticastSubscription(
+                address.address is Inet4Address && bytes.size == 4 -> ZeroTierMulticastSubscription(
                     0xffffffffffffL,
                     ((bytes[0].toLong() and 0xff) shl 24) or
                         ((bytes[1].toLong() and 0xff) shl 16) or
                         ((bytes[2].toLong() and 0xff) shl 8) or (bytes[3].toLong() and 0xff)
                 )
-                address.address is Inet6Address && bytes.size == 16 -> MulticastSubscription(
+                address.address is Inet6Address && bytes.size == 16 -> ZeroTierMulticastSubscription(
                     0x3333ff000000L or ((bytes[13].toLong() and 0xff) shl 16) or
                         ((bytes[14].toLong() and 0xff) shl 8) or (bytes[15].toLong() and 0xff), 0
                 )
