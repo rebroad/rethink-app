@@ -530,14 +530,17 @@ object TunFlowManager : KoinComponent {
 
         val rinr = persistentState.routeRethinkInRethink
 
+        // Inflow tuples are remote -> local, while ConnectivityManager's owner
+        // lookup expects local -> remote. Keep the original packet tuple below
+        // for logging and policy, and reverse only the lookup endpoints.
         var uid = getUid(
             ctx,
             recvdUid,
             protocol,
-            srcIp,
-            srcPort,
             dstIp,
-            dstPort
+            dstPort,
+            srcIp,
+            srcPort
         )
         // fixme: see flow()
         uid = FirewallManager.appId(uid, ctx.isPrimaryUser)

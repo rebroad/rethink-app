@@ -74,6 +74,7 @@ import com.celzero.bravedns.util.Utilities.isAtleastO
 import com.celzero.bravedns.util.Utilities.isAtleastS
 import com.celzero.bravedns.util.Utilities.isPlayStoreFlavour
 import com.celzero.bravedns.util.Utilities.showToastUiCentered
+import com.celzero.bravedns.zerotier.ZeroTierTunnelApi
 import com.celzero.bravedns.wireguard.Config
 import com.celzero.bravedns.wireguard.WgHopManager
 import com.celzero.firestack.backend.Backend
@@ -95,6 +96,7 @@ import com.celzero.firestack.intra.Controller
 import com.celzero.firestack.intra.DefaultDNS
 import com.celzero.firestack.intra.Intra
 import com.celzero.firestack.intra.Tunnel
+import com.celzero.firestack.intra.ZeroTierBridge
 import com.celzero.firestack.settings.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -110,7 +112,7 @@ import java.net.URLEncoder
  * This is a VpnAdapter that captures all traffic and routes it through a go-tun2socks instance with
  * custom logic for Intra.
  */
-class GoVpnAdapter : KoinComponent {
+class GoVpnAdapter : KoinComponent, ZeroTierTunnelApi {
     private val persistentState by inject<PersistentState>()
     private val appConfig by inject<AppConfig>()
     private val connTrackerDb by inject<ConnectionTrackerRepository>()
@@ -149,6 +151,41 @@ class GoVpnAdapter : KoinComponent {
             "tunnel connected",
             "tunnel connected with new params"
         )
+    }
+
+    override fun configureZeroTier(
+        networkId: String,
+        mac: String,
+        addressesCsv: String,
+        routesCsv: String,
+        frameSink: (String, ByteArray) -> Unit
+    ): Boolean = try {
+        val bridge = object : ZeroTierBridge {
+            override fun writeFrame(nwid: String, frame: ByteArray) {
+                frameSink(nwid, frame)
+            }
+        }
+        tunnel.configureZeroTier(networkId, mac, addressesCsv, routesCsv, bridge)
+        true
+    } catch (e: Exception) {
+        Logger.e(LOG_TAG_VPN, "$TAG configure ZeroTier failed: ${e.message}", e)
+        false
+    }
+
+    override fun injectZeroTierFrame(networkId: String, frame: ByteArray): Boolean = try {
+        tunnel.injectZeroTierFrame(networkId, frame)
+        true
+    } catch (e: Exception) {
+        Logger.e(LOG_TAG_VPN, "$TAG inject ZeroTier frame failed: ${e.message}", e)
+        false
+    }
+
+    override fun clearZeroTier(networkId: String): Boolean = try {
+        tunnel.clearZeroTier(networkId)
+        true
+    } catch (e: Exception) {
+        Logger.e(LOG_TAG_VPN, "$TAG clear ZeroTier network failed: ${e.message}", e)
+        false
     }
 
     suspend fun initResolverProxiesPcap(opts: TunnelOptions) {

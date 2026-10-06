@@ -426,18 +426,32 @@ val download by configurations.creating {
 }
 
 val firestackRepo = project.findProperty("firestackRepo")?.toString() ?: "github"
-val firestackCommit = project.findProperty("firestackCommit")?.toString() ?: "main"
+val firestackCommit = project.findProperty("firestackCommit")?.toString()
+    ?: "1c089c2ec90acb26ea619de7896c2851fd9290dc"
+val zeroTierSdkAarPath = project.findProperty("zerotierSdkAar")?.toString()
+    ?: "libs/zerotier-sdk.aar"
 
-fun firestackDependency(): String {
+fun firestackDependency(): Any {
+    if (firestackRepo == "local") {
+        val aarPath = project.findProperty("firestackAar")?.toString()
+            ?: throw GradleException("firestackRepo=local requires -PfirestackAar=/path/to/firestack.aar")
+        val aar = project.file(aarPath)
+        if (!aar.isFile) throw GradleException("Local Firestack AAR not found: $aar")
+        return files(aar)
+    }
+
     return when (firestackRepo) {
-        "jitpack" -> "com.github.celzero:firestack:$firestackCommit@aar"
-        "github" -> "com.github.celzero:firestack:$firestackCommit@aar"
+        "jitpack" -> "com.github.rebroad:firestack:$firestackCommit@aar"
+        "github" -> "com.github.rebroad:firestack:$firestackCommit@aar"
         "ossrh" -> "com.celzero:firestack:$firestackCommit@aar"
         else -> throw GradleException("Unknown firestackRepo: $firestackRepo")
     }
 }
 
 dependencies {
+
+    // Built from the separate ZeroTierOne source checkout; keep its source out of this repository.
+    implementation(files(project.file(zeroTierSdkAarPath)))
 
     implementation(libs.googleGuavaGuava)
 

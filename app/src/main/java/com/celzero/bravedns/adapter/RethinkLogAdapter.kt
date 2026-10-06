@@ -150,7 +150,7 @@ class RethinkLogAdapter(private val context: Context) :
             if (log.ipAddress == DNS_IP_TEMPLATE_V4 || log.ipAddress == DNS_IP_TEMPLATE_V6) {
                 b.connectionIpAddress.text = context.getString(R.string.dns_mode_info_title)
             } else {
-                b.connectionIpAddress.text = log.ipAddress
+                b.connectionIpAddress.text = formatRemoteEndpoint(log.ipAddress, log.port, log.protocol)
             }
 
             if (log.dnsQuery.isNullOrEmpty()) {
@@ -161,6 +161,15 @@ class RethinkLogAdapter(private val context: Context) :
                 // marquee is not working for the textview, hence the workaround.
                 b.connectionDomain.isSelected = true
             }
+        }
+
+        private fun formatRemoteEndpoint(ipAddress: String, port: Int, protocol: Int): String {
+            if ((protocol != Protocol.TCP.protocolType && protocol != Protocol.UDP.protocolType) || port !in 1..65535) {
+                return ipAddress
+            }
+
+            val host = if (ipAddress.contains(':') && !ipAddress.startsWith('[')) "[$ipAddress]" else ipAddress
+            return "$host:$port"
         }
 
         private fun displayAppDetails(log: RethinkLog) {

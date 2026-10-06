@@ -1,0 +1,13 @@
+ZeroTierOne Android SDK
+Copyright (c) ZeroTier, Inc. and contributors.
+Source: https://github.com/zerotier/ZeroTierOne
+Source revision: ccba53c9852b80bad1485a0466a9f16955ac1a50
+
+The Java SDK and JNI wrapper are licensed under GNU General Public License version
+3.0 or later. The ZeroTier core engine files are licensed under Mozilla Public
+License version 2.0. The applicable license texts are included in
+assets/licenses/GPL-3.0.txt and assets/licenses/MPL-2.0.txt, and are also retained
+in the SDK AAR under META-INF/licenses/.
+
+The Android NDK C++ runtime (libc++_shared.so) is distributed under the license
+terms applicable to the Android NDK.

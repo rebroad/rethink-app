@@ -132,3 +132,25 @@ We aren't there yet, may never will be but these are some tenets for the project
      
 Internet censorship (sometimes ISP-enforced and often times government-enforced), unabated dragnet surveillance (by pretty much every company and app) stirred us upon this path. The three of us university classmates, [Mohammed](https://www.linkedin.com/in/hussain-mohammed-2525a626/), [Murtaza](https://www.linkedin.com/in/murtaza-aliakbar/), [Santhosh](https://www.linkedin.com/in/santhosh-ponnusamy-2b781244/) got together in late 2019 in the sleepy town of Coimbatore, India to do something about it. Our main gripe was there were all these wonderful tools that people could use but couldn't, either due to cost or due to inability to grok Computer-specific jargon. A lot has happened since we started and a lot has changed but our focus has always been on Android and its 3B+ unsuspecting users. The current idea has been in the works since May 2020, with the pandemic derailing a bit of progress, and a bit of snafu with abandoning our previous version in favour of the current fork, which we aren't proud of yet, but it is a start. All is good now that we've won a grant from the [Mozilla Builders MVP program](https://builders.mozilla.community/) to go ahead and build this thing that we wanted to... do so faster... and not simply sleep our way through the execution. I hope you're excited but not as much as us that you quit your jobs for this like we did.
 
+## Local Android builds
+
+The Android Gradle build requires JDK 17. On a clean Linux x86_64 machine, install the checksum-verified Eclipse Temurin distribution into `/opt/jdks` with:
+
+```sh
+./scripts/install-jdk17.sh
+export JAVA_HOME=/opt/jdks/temurin-17
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+The ZeroTier SDK AAR contains JNI libraries for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`; its source stays in a separate ZeroTierOne checkout. Run `./scripts/build-android.sh` to build the SDK, cross-compile ZeroTier's CLI for Android arm64, build the app, and run the focused ZeroTier and Stats endpoint unit tests. Use `./scripts/build-android.sh --install` to install the arm64 debug APK through Flip7's LAN ADB connection and place the freshly built `zerotier-cli` in Termux's `$PREFIX/bin`. Set `ZEROTIER_CLI_BINARY` only to override the generated CLI binary.
+
+On first CLI use, copy the token from Rethink and enter it without echo:
+
+```sh
+read -r -s -p 'ZeroTier token: ' ZT_TOKEN
+printf '\n'
+printf '%s\n' "$ZT_TOKEN" | zerotier-cli -T- info
+unset ZT_TOKEN
+```
+
+This caches the token in the current user's private CLI file; subsequent commands use the default loopback address and port, for example `zerotier-cli info` or `zerotier-cli listnetworks`. The CLI defaults to `127.0.0.1:9993` and, when `/var` is absent, checks the Termux ZeroTier state path. The build script uses the pinned `rebroad/firestack` revision and the de-Googled F-Droid debug variant. The JDK install script pins the Temurin archive URL and SHA-256 so JDK 17 can be restored on a clean Linux system without relying on its package repositories.

@@ -95,6 +95,9 @@
             android:name=".ui.activity.TunnelSettingsActivity"
             android:finishOnTaskLaunch="true" />
         <activity
+            android:name=".ui.activity.ZeroTierActivity"
+            android:finishOnTaskLaunch="true" />
+        <activity
             android:name=".ui.activity.AppListActivity"
             android:finishOnTaskLaunch="true" />
         <activity

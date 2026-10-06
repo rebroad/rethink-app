@@ -79,6 +79,7 @@ import com.celzero.bravedns.database.RefreshDatabase
 import com.celzero.bravedns.iab.InAppBillingHandler
 import com.celzero.bravedns.iab.SubscriptionCheckWorker
 import com.celzero.bravedns.net.go.GoVpnAdapter
+import com.celzero.bravedns.zerotier.ZeroTierManager
 import com.celzero.bravedns.net.manager.ConnectionTracer
 import com.celzero.bravedns.receiver.NotificationActionReceiver
 import com.celzero.bravedns.receiver.UserPresentReceiver
@@ -158,6 +159,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -197,6 +201,7 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
         NetworkLifecycleObserver(this, this)
     private val connTrackRepository by inject<ConnectionTrackerRepository>()
     private val eventLogger by inject<EventLogger>()
+    private val zeroTierManager by inject<ZeroTierManager>()
 
     private val userPresentReceiver: UserPresentReceiver = UserPresentReceiver()
 
@@ -204,6 +209,8 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
     // set and unset this variable on the serializer thread
     @Volatile
     private var vpnAdapter: GoVpnAdapter? = null
+    @Volatile
+    private var zeroTierUnderlayNetwork: Network? = null
     private val dnsQueryDispatcher by lazy { Daemons.ioDispatcher("onquery", DNSOpts(), vpnScope) }
     private val flowDispatcher by lazy { Daemons.ioDispatcher("flow", Mark(),  vpnScope) }
     private val inflowDispatcher by lazy { Daemons.ioDispatcher("inflow", Mark(), vpnScope) }
@@ -756,6 +763,15 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
         keyguardManager = this.getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         cm =
             this.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        vpnScope.launch {
+            zeroTierManager.state.map { state ->
+                state.networks.flatMap { network -> network.routes.map { network.networkId to it } }
+                    .sortedBy { it.first + it.second }
+            }.distinctUntilChanged().collect {
+                if (vpnAdapter != null) restartVpnWithNewAppConfig("ZeroTier routes changed")
+            }
+        }
 
         ensureNotificationChannelExists()
 
@@ -1972,8 +1988,20 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
         Logger.i(LOG_TAG_VPN, "stopped vpn adapter & service: $reason, $userInitiated")
     }
 
+    private fun updateZeroTierUnderlay(network: Network?) {
+        if (network == null) {
+            zeroTierManager.detachUnderlay()
+            zeroTierUnderlayNetwork = null
+            return
+        }
+        if (zeroTierUnderlayNetwork == network && zeroTierManager.state.value.transportError == null) return
+        zeroTierManager.attachUnderlay({ socket -> protect(socket) }, network)
+        zeroTierUnderlayNetwork = if (zeroTierManager.state.value.transportError == null) network else null
+    }
+
     private suspend fun stopVpnAdapter() =
         withContext(CoroutineName("stopVpn") + serializer) {
+            zeroTierManager.attachTunnel(null)
             if (vpnAdapter == null) {
                 Logger.i(LOG_TAG_VPN, "vpn adapter already stopped")
                 return@withContext
@@ -2281,6 +2309,7 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
                     Logger.i(LOG_TAG_VPN, "vpn-adapter doesn't exists, create one, fd: $fd, lockdown: $lockdown, protos: $protos, ifaddr: $ifaceAddresses, opts: $opts, mtu: $mtu, nwMtu: $nwMtu")
                     GoVpnAdapter.setLogLevel(persistentState.goLoggerLevel.toInt(), includeFileTrace = persistentState.includeFileTrace)
                     vpnAdapter = GoVpnAdapter(ctx, vpnScope, fd, ifaceAddresses, mtu, nwMtu, opts) // may throw
+                    zeroTierManager.attachTunnel(vpnAdapter)
                     Logger.d(LOG_TAG_VPN, "vpn-adapter created with ifaddr: $ifaceAddresses, protos: $protos")
                     io("tunInit") { vpnAdapter?.initResolverProxiesPcap(opts) }
                     io("rpnCheck") { checkForPlusSubscription() }
@@ -2322,6 +2351,7 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
                         }
                     }
                     setTunMode()
+                    zeroTierManager.attachTunnel(vpnAdapter)
                     return@withContext ok
                 }
             } catch (e: Exception) {
@@ -2341,6 +2371,9 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
     suspend fun onNetworkDisconnected(networks: ConnectionMonitor.UnderlyingNetworks, forceRestart: Boolean = false) {
         underlyingNetworks = networks
         underlyingNetworks?.vpnLockdown = isLockdown()
+        val fallbackNetwork = networks.ipv4Net.firstOrNull()?.network
+            ?: networks.ipv6Net.firstOrNull()?.network
+        updateZeroTierUnderlay(fallbackNetwork)
 
         val underlyingNws = getUnderlays()
         withContext(Dispatchers.Main) {
@@ -2505,6 +2538,9 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
         val isSsidChanged = out.ssidChanged
         underlyingNetworks = networks
         underlyingNetworks?.vpnLockdown = isLockdown()
+        val physicalNetwork = networks.ipv4Net.firstOrNull()?.network
+            ?: networks.ipv6Net.firstOrNull()?.network
+        updateZeroTierUnderlay(physicalNetwork)
 
         // always reset the system dns server ip of the active network with the tunnel
         setNetworkAndDefaultDnsIfNeeded(isRoutesChanged || isBoundNetworksChanged)
@@ -2981,6 +3017,9 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
     }
 
     override fun onDestroy() {
+        zeroTierManager.attachTunnel(null)
+        zeroTierManager.detachUnderlay()
+        zeroTierUnderlayNetwork = null
         // Dismiss the firewall bubble and tear down its observer.
         //
         // Lifecycle note: onDestroy() is called ONLY when the VPN is truly stopping
@@ -3187,6 +3226,18 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
 
             val (has4, has6) = determineRoutes(networks)
 
+            val zeroTierRouteFamilies = zeroTierManager.state.value.networks
+                .flatMap { it.routes + it.assignedAddresses }
+                .mapNotNull { route ->
+                    val address = try {
+                        IPAddressString(route.substringBefore('@').substringBefore('=').substringBefore('/')).toAddress()
+                    } catch (_: Exception) { null }
+                    address?.toInetAddress()?.address?.size?.let { it == 4 } to
+                        address?.toInetAddress()?.address?.size?.let { it == 16 }
+                }
+            val zeroTierHas4 = zeroTierRouteFamilies.any { it.first == true }
+            val zeroTierHas6 = zeroTierRouteFamilies.any { it.second == true }
+
             // TODO: do we need to still exclude the routes in case of noRoutes?
             val noRoutes = !has4 && !has6
 
@@ -3195,10 +3246,10 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
             val firewallMode = appConfig.getBraveMode().isFirewallActive()
 
             // setup the gateway addr
-            if (has4 || noRoutes) {
+            if (has4 || noRoutes || zeroTierHas4) {
                 builder = addIfAddress4(builder)
             }
-            if (has6 || noRoutes) {
+            if (has6 || noRoutes || zeroTierHas6) {
                 builder = addIfAddress6(builder)
             }
 
@@ -3233,6 +3284,8 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
                 }
             }
 
+            builder = addZeroTierRoutes(builder)
+
             // nw engine expects the fd to be non-blocking
             // builder.setBlocking(false)
 
@@ -3252,6 +3305,42 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
             Logger.crash(LOG_TAG_VPN, e.message ?: "err establishVpn", e)
             return null
         }
+    }
+
+    private fun addZeroTierRoutes(builder: Builder): Builder {
+        data class Route(val cidr: String, val prefix: Int, val metric: Int, val networkId: String, val address: InetAddress)
+        val candidates = zeroTierManager.state.value.networks.flatMap { network ->
+            (network.routes + network.assignedAddresses).mapNotNull { encoded ->
+                try {
+                    val metric = encoded.substringAfterLast('@', "0").toIntOrNull() ?: 0
+                    val route = encoded.substringBeforeLast('@')
+                    val cidr = route.substringBefore('=')
+                    val addressText = cidr.substringBefore('/')
+                    val prefix = cidr.substringAfter('/', "").toInt()
+                    val parsed = IPAddressString(addressText).toAddress() ?: return@mapNotNull null
+                    if (prefix !in 0..parsed.bitCount) return@mapNotNull null
+                    // Assigned addresses are host addresses (for example 192.168.192.9/24),
+                    // while VpnService.Builder.addRoute requires the address to have all host
+                    // bits cleared. Canonicalize both assigned prefixes and advertised routes
+                    // before passing them to Android.
+                    val prefixBlock = parsed.toPrefixBlock(prefix)
+                    Route(
+                        "${prefixBlock.toNormalizedString()}/$prefix",
+                        prefix,
+                        metric,
+                        network.networkId,
+                        prefixBlock.toInetAddress()
+                    )
+                } catch (_: Exception) { null }
+            }
+        }
+        // Android's Builder is prefix-based, so duplicate targets use the same winner as the
+        // Firestack route selector: lowest metric, then lexicographically smallest NWID.
+        candidates.groupBy { it.cidr }.values.map { group ->
+            group.sortedWith(compareBy<Route>({ it.prefix * -1 }, { it.metric }, { it.networkId })).first()
+        }.sortedWith(compareBy<Route>({ it.prefix * -1 }, { it.metric }, { it.networkId }))
+            .forEach { route -> builder.addRoute(route.address, route.prefix) }
+        return builder
     }
 
     private fun route6(nws: Networks): Boolean {

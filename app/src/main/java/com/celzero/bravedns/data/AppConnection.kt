@@ -39,3 +39,10 @@ fun AppConnection.unknownEndpointLabel(): String? {
     val host = if (ipAddress.contains(':')) "[$ipAddress]" else ipAddress
     return "$host:$port"
 }
+
+/** Prefer a projected endpoint over cached app resolution for unattributed Stats rows. */
+fun AppConnection.statsAppLabel(resolvedAppName: String?): String? {
+    return unknownEndpointLabel()
+        ?: resolvedAppName?.takeIf { it.isNotEmpty() }
+        ?: appOrDnsName?.takeIf { it.isNotEmpty() }
+}
