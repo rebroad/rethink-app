@@ -83,6 +83,29 @@ class ZeroTierManagerTest {
         assertEquals(0xc0a8010aL, subscription.adi)
     }
 
+    @Test fun `restored network config rebuilds address resolution subscriptions`() {
+        val id = ZeroTierManager.parseNetworkId(networkId)!!
+        val config = networkConfig(
+            VirtualNetworkStatus.NETWORK_STATUS_OK,
+            arrayOf(InetSocketAddress("192.168.192.7", 24))
+        )
+
+        assertEquals(
+            setOf(ZeroTierMulticastSubscription(0xffffffffffffL, 0xc0a8c007L)),
+            ZeroTierManager.multicastSubscriptions(listOf(config))[id]
+        )
+    }
+
+    @Test fun `non-authorized restored network config has no address resolution subscriptions`() {
+        val id = ZeroTierManager.parseNetworkId(networkId)!!
+        val config = networkConfig(
+            VirtualNetworkStatus.NETWORK_STATUS_ACCESS_DENIED,
+            arrayOf(InetSocketAddress("192.168.192.7", 24))
+        )
+
+        assertEquals(emptySet<ZeroTierMulticastSubscription>(), ZeroTierManager.multicastSubscriptions(listOf(config))[id])
+    }
+
     @Test fun `assigned ipv6 subscribes to solicited-node multicast mac`() {
         val subscription = ZeroTierManager.resolutionGroup(InetSocketAddress("2001:db8::12:34:ab:cd:ef", 64))!!
         assertEquals(0x3333ffcd00efL, subscription.mac)
@@ -106,7 +129,10 @@ class ZeroTierManagerTest {
         assertTrue(frame.copyOfRange(18, frame.size).contentEquals(payload))
     }
 
-    private fun networkConfig(status: VirtualNetworkStatus) = VirtualNetworkConfig(
+    private fun networkConfig(
+        status: VirtualNetworkStatus,
+        addresses: Array<InetSocketAddress> = emptyArray()
+    ) = VirtualNetworkConfig(
         ZeroTierManager.parseNetworkId(networkId)!!,
         0xaabbccddeeffL,
         "test network",
@@ -118,7 +144,7 @@ class ZeroTierManagerTest {
         true,
         0,
         1L,
-        emptyArray(),
+        addresses,
         emptyArray(),
         null
     )
