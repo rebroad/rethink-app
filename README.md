@@ -142,7 +142,9 @@ export JAVA_HOME=/opt/jdks/temurin-17
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-The ZeroTier SDK AAR contains JNI libraries for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`; its source stays in a separate ZeroTierOne checkout. Run `./scripts/build-android.sh` to build the SDK, cross-compile ZeroTier's CLI for Android arm64, build the app, and run the focused ZeroTier and Stats endpoint unit tests. Use `./scripts/build-android.sh --install` to install the arm64 debug APK through Flip7's LAN ADB connection and place the freshly built `zerotier-cli` in Termux's `$PREFIX/bin`. Set `ZEROTIER_CLI_BINARY` only to override the generated CLI binary.
+The build also needs the Android SDK and NDK 28.2.13676358. ZeroTierOne stays in its own checkout, outside this repository. `bash ./scripts/prepare-zerotier-source.sh` creates that checkout when it is missing, using the pinned `rebroad/ZeroTierOne` revision `052cb0085e81368a294a3a9b94bc8c19244eb139`; it uses `/mnt/kingston/@home/rebroad/src/ZeroTierOne` when present and otherwise `$HOME/src/ZeroTierOne`. To use another source location or revision, set `ZEROTIER_SOURCE_DIR` or `ZEROTIER_SOURCE_COMMIT`. The scripts refuse to silently switch an existing checkout or build with tracked source changes.
+
+The ZeroTier SDK AAR contains JNI libraries for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`. Run `./scripts/build-android.sh` with no arguments to prepare the external source if needed, build the SDK, cross-compile ZeroTier's CLI for Android arm64, build the app, and run the focused ZeroTier and Stats endpoint unit tests. Use `./scripts/build-android.sh --install` to install the arm64 debug APK through Flip7's LAN ADB connection and place the freshly built `zerotier-cli` in Termux's `$PREFIX/bin`. Set `ZEROTIER_CLI_BINARY` only to override the generated CLI binary.
 
 On first CLI use, copy the token from Rethink and enter it without echo:
 
