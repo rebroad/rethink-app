@@ -52,9 +52,12 @@ fun AppConnection.statsAppLabel(resolvedAppName: String?): String? {
 
 /** Resolve a Top Active Connections row, using its protocol marker for unknown app rows. */
 fun AppConnection.topActiveConnectionLabel(resolvedAppName: String?): String? {
-    // The TOP_ACTIVE_CONNS query sets flag to the protocol only for rows that
-    // have no resolvable app name. Prefer the endpoint even when UID lookup
-    // returns a localized or otherwise non-generic fallback.
-    if (flag.isNotBlank()) return unknownEndpointLabel()
+    // The query's protocol marker identifies unattributed rows, while the
+    // stored app name is the fallback signal for rows from older or alternate
+    // query paths. In either case, do not let a UID-level lookup replace the
+    // endpoint with a generic or unrelated name.
+    if (flag.isNotBlank() || appOrDnsName.isGenericUnknownName()) {
+        return unknownEndpointLabel() ?: statsAppLabel(resolvedAppName)
+    }
     return statsAppLabel(resolvedAppName)
 }
