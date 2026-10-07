@@ -44,6 +44,7 @@ import com.celzero.bravedns.R
 import com.celzero.bravedns.data.AppConfig
 import com.celzero.bravedns.data.AppConnection
 import com.celzero.bravedns.data.statsAppLabel
+import com.celzero.bravedns.data.topActiveConnectionLabel
 import com.celzero.bravedns.data.unknownEndpointLabel
 import com.celzero.bravedns.database.AppInfo
 import com.celzero.bravedns.database.ConnectionTracker
@@ -458,7 +459,11 @@ class SummaryStatisticsAdapter(
         private fun applyAppName(appConnection: AppConnection, cachedAppName: String?) {
             // Resolve the projected endpoint before the uid cache: unknown or
             // system uids can resolve to a generic "Unknown" label.
-            val name = appConnection.statsAppLabel(cachedAppName)
+            val name = if (type == SummaryStatisticsType.TOP_ACTIVE_CONNS) {
+                appConnection.topActiveConnectionLabel(cachedAppName)
+            } else {
+                appConnection.statsAppLabel(cachedAppName)
+            }
                 ?: context.getString(
                     R.string.network_log_app_name_unnamed,
                     appConnection.uid.toString()
