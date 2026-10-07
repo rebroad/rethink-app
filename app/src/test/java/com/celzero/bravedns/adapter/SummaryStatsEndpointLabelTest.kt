@@ -53,6 +53,16 @@ class SummaryStatsEndpointLabelTest {
     }
 
     @Test
+    fun storedUnknownNameUsesEndpointWhenProtocolMarkerIsMissing() {
+        assertEquals(
+            "192.168.192.7:8022",
+            connection("192.168.192.7", 8022, "Unknown")
+                .copy(flag = "")
+                .topActiveConnectionLabel("Android")
+        )
+    }
+
+    @Test
     fun cachedAppNameRemainsForRowsWithoutProjectedEndpoint() {
         assertEquals(
             "Termux",
