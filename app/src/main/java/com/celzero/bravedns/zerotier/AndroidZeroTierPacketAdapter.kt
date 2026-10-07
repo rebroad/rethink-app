@@ -7,6 +7,7 @@ package com.celzero.bravedns.zerotier
 import android.net.Network
 import com.zerotier.sdk.VirtualNetworkConfig
 import com.zerotier.sdk.VirtualNetworkConfigOperation
+import com.zerotier.sdk.VirtualNetworkStatus
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
@@ -105,6 +106,10 @@ class AndroidZeroTierPacketAdapter : ZeroTierPacketAdapter {
         val currentTunnel = tunnel ?: return
         val currentConfig = config ?: return
         val id = ZeroTierManager.formatNetworkId(networkId)
+        if (currentConfig.status != VirtualNetworkStatus.NETWORK_STATUS_OK) {
+            currentTunnel.clearZeroTier(id)
+            return
+        }
         val addresses = currentConfig.assignedAddresses.orEmpty().joinToString(",") {
             ZeroTierManager.socketCidr(it)
         }

@@ -3,6 +3,8 @@ package com.celzero.bravedns.zerotier
 import java.net.InetSocketAddress
 import com.zerotier.sdk.NodeStatus
 import com.zerotier.sdk.VirtualNetworkConfig
+import com.zerotier.sdk.VirtualNetworkConfigOperation
+import com.zerotier.sdk.VirtualNetworkRoute
 import com.zerotier.sdk.VirtualNetworkStatus
 import com.zerotier.sdk.VirtualNetworkType
 import org.junit.Assert.assertEquals
@@ -82,6 +84,73 @@ class ZeroTierManagerTest {
         assertEquals("ACCESS DENIED", onlineNode.networks.single().configurationStatus)
     }
 
+    @Test fun `unapproved network prefixes are not exposed to routing`() {
+        val id = ZeroTierManager.parseNetworkId(networkId)!!
+        val denied = networkConfig(
+            VirtualNetworkStatus.NETWORK_STATUS_ACCESS_DENIED,
+            arrayOf(InetSocketAddress("192.168.192.7", 24)),
+            arrayOf(VirtualNetworkRoute(InetSocketAddress("0.0.0.0", 0), null, 0, 0))
+        )
+
+        val state = zeroTierNetworkStates(listOf(id), listOf(denied)).single()
+        assertEquals("ACCESS DENIED", state.configurationStatus)
+        assertEquals(emptyList<String>(), state.assignedAddresses)
+        assertEquals(emptyList<String>(), state.routes)
+    }
+
+    @Test fun `packet adapter clears unauthorized configuration and installs approved routes`() {
+        val id = ZeroTierManager.parseNetworkId(networkId)!!
+        var configuredRoutes = ""
+        var configureCount = 0
+        var clearCount = 0
+        val adapter = AndroidZeroTierPacketAdapter()
+        adapter.attachTunnel(object : ZeroTierTunnelApi {
+            override fun configureZeroTier(
+                networkId: String,
+                mac: String,
+                addressesCsv: String,
+                routesCsv: String,
+                frameSink: (String, ByteArray) -> Unit
+            ): Boolean {
+                configureCount++
+                configuredRoutes = routesCsv
+                return true
+            }
+
+            override fun injectZeroTierFrame(networkId: String, frame: ByteArray): Boolean = true
+            override fun clearZeroTier(networkId: String): Boolean {
+                clearCount++
+                return true
+            }
+        })
+
+        val denied = networkConfig(
+            VirtualNetworkStatus.NETWORK_STATUS_ACCESS_DENIED,
+            arrayOf(InetSocketAddress("192.168.192.7", 24)),
+            arrayOf(VirtualNetworkRoute(InetSocketAddress("0.0.0.0", 0), null, 0, 0))
+        )
+        adapter.onNetworkConfiguration(
+            id,
+            VirtualNetworkConfigOperation.VIRTUAL_NETWORK_CONFIG_OPERATION_UP,
+            denied
+        )
+        assertEquals(0, configureCount)
+        assertEquals(1, clearCount)
+
+        val authorized = networkConfig(
+            VirtualNetworkStatus.NETWORK_STATUS_OK,
+            arrayOf(InetSocketAddress("192.168.192.7", 24)),
+            arrayOf(VirtualNetworkRoute(InetSocketAddress("0.0.0.0", 0), null, 0, 0))
+        )
+        adapter.onNetworkConfiguration(
+            id,
+            VirtualNetworkConfigOperation.VIRTUAL_NETWORK_CONFIG_OPERATION_CONFIG_UPDATE,
+            authorized
+        )
+        assertEquals(1, configureCount)
+        assertEquals("0.0.0.0/0@0", configuredRoutes)
+    }
+
     @Test fun `sdk socket target keeps prefix rather than socket port`() {
         assertEquals("10.1.2.0/24", ZeroTierManager.socketCidr(InetSocketAddress("10.1.2.0", 24)))
         assertEquals("0.0.0.0/0", ZeroTierManager.socketCidr(InetSocketAddress("0.0.0.0", 0)))
@@ -141,7 +210,8 @@ class ZeroTierManagerTest {
 
     private fun networkConfig(
         status: VirtualNetworkStatus,
-        addresses: Array<InetSocketAddress> = emptyArray()
+        addresses: Array<InetSocketAddress> = emptyArray(),
+        routes: Array<VirtualNetworkRoute> = emptyArray()
     ) = VirtualNetworkConfig(
         ZeroTierManager.parseNetworkId(networkId)!!,
         0xaabbccddeeffL,
@@ -155,7 +225,7 @@ class ZeroTierManagerTest {
         0,
         1L,
         addresses,
-        emptyArray(),
+        routes,
         null
     )
 }

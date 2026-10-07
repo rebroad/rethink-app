@@ -3310,6 +3310,9 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
     private fun addZeroTierRoutes(builder: Builder): Builder {
         data class Route(val cidr: String, val prefix: Int, val metric: Int, val networkId: String, val address: InetAddress)
         val candidates = zeroTierManager.state.value.networks.flatMap { network ->
+            if (!network.configurationStatus.equals("OK", ignoreCase = true)) {
+                return@flatMap emptyList()
+            }
             (network.routes + network.assignedAddresses).mapNotNull { encoded ->
                 try {
                     val metric = encoded.substringAfterLast('@', "0").toIntOrNull() ?: 0

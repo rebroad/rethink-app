@@ -103,6 +103,7 @@ internal fun zeroTierNetworkStates(
     val configs = configurations.associateBy { it.nwid }
     return joined.map { id ->
         val config = configs[id]
+        val usableConfig = config?.takeIf { it.status == VirtualNetworkStatus.NETWORK_STATUS_OK }
         ZeroTierNetworkState(
             ZeroTierManager.formatNetworkId(id),
             config?.status?.name?.removePrefix("NETWORK_STATUS_")?.replace('_', ' ')
@@ -111,8 +112,8 @@ internal fun zeroTierNetworkStates(
             config?.name.orEmpty(),
             config?.type?.name.orEmpty(),
             config?.mtu ?: 0,
-            config?.assignedAddresses.orEmpty().map { ZeroTierManager.socketCidr(it) },
-            config?.routes.orEmpty().mapNotNull { route ->
+            usableConfig?.assignedAddresses.orEmpty().map { ZeroTierManager.socketCidr(it) },
+            usableConfig?.routes.orEmpty().mapNotNull { route ->
                 val target = route.target?.let { ZeroTierManager.socketCidr(it) } ?: return@mapNotNull null
                 val gateway = route.via?.address?.hostAddress
                 val via = if (gateway.isNullOrBlank()) target else "$target=$gateway"
