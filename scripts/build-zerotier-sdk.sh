@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-ZT_SOURCE_DIR=${ZEROTIER_SOURCE_DIR:-/mnt/kingston/@home/rebroad/src/ZeroTierOne}
+ZT_SOURCE_DIR=$(bash "$ROOT/scripts/prepare-zerotier-source.sh")
 ZT_BUILD_ROOT=${ZEROTIER_BUILD_ROOT:-/mnt/kingston/builds/rebroad/src/ZeroTierOne.build}
+mkdir -p "$ZT_BUILD_ROOT"
+ZT_BUILD_ROOT=$(cd "$ZT_BUILD_ROOT" && pwd -P)
 ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
 JAVA_HOME=${JAVA_HOME:-/opt/jdks/temurin-17}
 NDK_VERSION=${ANDROID_NDK_VERSION:-28.2.13676358}
@@ -12,12 +14,6 @@ ANDROID_API=${ANDROID_API:-23}
 OUTPUT_AAR=${ZEROTIER_SDK_AAR:-$ROOT/app/build/generated/zerotier-sdk/zerotier-sdk.aar}
 ABIS=(arm64-v8a armeabi-v7a x86 x86_64)
 
-for required in "$ZT_SOURCE_DIR/java/src" "$ZT_SOURCE_DIR/node" "$ZT_SOURCE_DIR/osdep" "$ZT_SOURCE_DIR/ext/prometheus-cpp-lite-1.0"; do
-    if [[ ! -d "$required" ]]; then
-        echo "Required ZeroTierOne source path is missing: $required" >&2
-        exit 2
-    fi
-done
 if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
     echo "Android NDK $NDK_VERSION not found under $ANDROID_HOME; set ANDROID_NDK_HOME." >&2
     exit 2

@@ -10,8 +10,10 @@ if [[ "$ROOT" == /mnt/kingston/@home/* ]] && command -v cpto >/dev/null 2>&1; th
   exec bash "$BUILD_ROOT/scripts/build-zerotier-cli.sh" "$@"
 fi
 
-ZT_SOURCE_DIR=${ZEROTIER_SOURCE_DIR:-/mnt/kingston/@home/rebroad/src/ZeroTierOne}
+ZT_SOURCE_DIR=$(bash "$ROOT/scripts/prepare-zerotier-source.sh")
 ZT_BUILD_ROOT=${ZEROTIER_BUILD_ROOT:-/mnt/kingston/builds/rebroad/src/ZeroTierOne.build}
+mkdir -p "$ZT_BUILD_ROOT"
+ZT_BUILD_ROOT=$(cd "$ZT_BUILD_ROOT" && pwd -P)
 CLI_BUILD_DIR="$ZT_BUILD_ROOT/termux-cli-build"
 OUTPUT_DIR=${ZEROTIER_CLI_OUTPUT_DIR:-$ROOT/app/build/generated/zerotier-cli}
 if command -v cpto >/dev/null 2>&1; then
@@ -28,8 +30,8 @@ ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION}
 ANDROID_API=${ANDROID_API:-24}
 ANDROID_BUILD_JOBS=${ANDROID_BUILD_JOBS:-4}
 
-for path in node osdep service nonfree/controller include ext/cpp-httplib ext/http-parser ext/inja \
-  ext/nlohmann ext/miniupnpc ext/libnatpmp ext/prometheus-cpp-lite-1.0 ext/opentelemetry-cpp-api-only; do
+for path in service nonfree/controller include ext/cpp-httplib ext/http-parser ext/inja \
+  ext/nlohmann ext/miniupnpc ext/libnatpmp ext/opentelemetry-cpp-api-only; do
   if [[ ! -d "$ZT_SOURCE_DIR/$path" ]]; then
     echo "Required ZeroTierOne source path is missing: $ZT_SOURCE_DIR/$path" >&2
     exit 2
