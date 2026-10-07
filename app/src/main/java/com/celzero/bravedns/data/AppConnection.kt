@@ -45,6 +45,11 @@ private fun String?.isGenericUnknownName(): Boolean =
 
 /** Use the endpoint for unresolved Stats rows, preserving a real app name when available. */
 fun AppConnection.statsAppLabel(resolvedAppName: String?): String? {
+    // The TOP_ACTIVE_CONNS query sets flag to the protocol only for rows that
+    // have no resolvable app name. Prefer the endpoint for those rows even if
+    // the UID lookup returned a localized or otherwise non-generic fallback.
+    if (flag.isNotBlank()) return unknownEndpointLabel()
+
     val appName = resolvedAppName?.takeUnless { it.isGenericUnknownName() }
         ?: appOrDnsName?.takeUnless { it.isGenericUnknownName() }
     return appName ?: unknownEndpointLabel()

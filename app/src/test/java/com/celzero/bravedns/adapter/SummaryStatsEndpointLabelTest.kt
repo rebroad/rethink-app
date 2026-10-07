@@ -43,6 +43,15 @@ class SummaryStatsEndpointLabelTest {
     }
 
     @Test
+    fun protocolMarkedUnknownUsesEndpointEvenWithResolvedFallback() {
+        assertEquals(
+            "192.168.192.7:8022",
+            connection("192.168.192.7", 8022, "Unknown").copy(flag = "6")
+                .statsAppLabel("Unknown")
+        )
+    }
+
+    @Test
     fun cachedAppNameRemainsForRowsWithoutProjectedEndpoint() {
         assertEquals(
             "Termux",
