@@ -51,6 +51,16 @@ class ZeroTierManagerTest {
         assertEquals(-2, store.put("../outside", bytes, true))
     }
 
+    @Test fun `node identity secret survives datastore recreation`() {
+        val root = temp.newFolder("identity")
+        val identity = ByteArray(128) { (it * 13).toByte() }
+        assertEquals(0, ZeroTierDataStore(root).put("identity.secret", identity, true))
+
+        val restored = ByteArray(identity.size)
+        assertEquals(identity.size.toLong(), ZeroTierDataStore(root).get("identity.secret", restored))
+        assertTrue(identity.contentEquals(restored))
+    }
+
     @Test fun `node connectivity and network authorization remain independent`() {
         val id = ZeroTierManager.parseNetworkId(networkId)!!
         val authorized = networkConfig(VirtualNetworkStatus.NETWORK_STATUS_OK)
