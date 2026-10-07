@@ -244,7 +244,7 @@ interface StatsSummaryDao {
                    port as port,
                    COUNT(*) as count,
                    0 as blocked,
-                   CASE WHEN appName = 'Unknown' THEN CAST(protocol AS TEXT) ELSE '' END as flag,
+                   CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%') THEN CAST(protocol AS TEXT) ELSE '' END as flag,
                    appName as appOrDnsName,
                    0 as downloadBytes,
                    0 as uploadBytes,
@@ -258,7 +258,7 @@ interface StatsSummaryDao {
                    AND message = ''
                    AND timeStamp > :to
                GROUP BY appName,
-                   CASE WHEN appName = 'Unknown'
+                   CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%')
                        THEN uid || ':' || protocol || ':' || ipAddress || ':' || port
                        ELSE ''
                    END
@@ -271,11 +271,11 @@ interface StatsSummaryDao {
     @Query(
         """
             SELECT uid as uid,
-                CASE WHEN appName = 'Unknown' THEN ipAddress ELSE '' END as ipAddress,
-                CASE WHEN appName = 'Unknown' THEN port ELSE 0 END as port,
+                CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%') THEN ipAddress ELSE '' END as ipAddress,
+                CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%') THEN port ELSE 0 END as port,
                 COUNT(*) as count,
                 0 as blocked,
-                CASE WHEN appName = 'Unknown' THEN CAST(protocol AS TEXT) ELSE '' END as flag,
+                CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%') THEN CAST(protocol AS TEXT) ELSE '' END as flag,
                 appName as appOrDnsName,
                 0 as downloadBytes,
                 0 as uploadBytes,
@@ -289,7 +289,7 @@ interface StatsSummaryDao {
                 AND message = ''
                 AND timeStamp >= :to
             GROUP BY appName,
-                CASE WHEN appName = 'Unknown'
+                CASE WHEN (appName = 'Unknown' OR appName LIKE 'Unknown (%')
                     THEN uid || ':' || protocol || ':' || ipAddress || ':' || port
                     ELSE ''
                 END
