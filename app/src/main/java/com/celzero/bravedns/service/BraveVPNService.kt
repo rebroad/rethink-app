@@ -79,8 +79,9 @@ import com.celzero.bravedns.database.RefreshDatabase
 import com.celzero.bravedns.iab.InAppBillingHandler
 import com.celzero.bravedns.iab.SubscriptionCheckWorker
 import com.celzero.bravedns.net.go.GoVpnAdapter
-import com.celzero.bravedns.zerotier.ZeroTierManager
 import com.celzero.bravedns.net.manager.ConnectionTracer
+import com.celzero.bravedns.zerotier.ZeroTierManager
+import com.celzero.bravedns.zerotier.zeroTierVpnRoutes
 import com.celzero.bravedns.receiver.NotificationActionReceiver
 import com.celzero.bravedns.receiver.UserPresentReceiver
 import com.celzero.bravedns.rpnproxy.RpnProxyManager
@@ -3308,41 +3309,9 @@ class BraveVPNService : VpnService(), ConnectionMonitor.NetworkListener, Network
     }
 
     private fun addZeroTierRoutes(builder: Builder): Builder {
-        data class Route(val cidr: String, val prefix: Int, val metric: Int, val networkId: String, val address: InetAddress)
-        val candidates = zeroTierManager.state.value.networks.flatMap { network ->
-            if (!network.configurationStatus.equals("OK", ignoreCase = true)) {
-                return@flatMap emptyList()
-            }
-            (network.routes + network.assignedAddresses).mapNotNull { encoded ->
-                try {
-                    val metric = encoded.substringAfterLast('@', "0").toIntOrNull() ?: 0
-                    val route = encoded.substringBeforeLast('@')
-                    val cidr = route.substringBefore('=')
-                    val addressText = cidr.substringBefore('/')
-                    val prefix = cidr.substringAfter('/', "").toInt()
-                    val parsed = IPAddressString(addressText).toAddress() ?: return@mapNotNull null
-                    if (prefix !in 0..parsed.bitCount) return@mapNotNull null
-                    // Assigned addresses are host addresses (for example 192.168.192.9/24),
-                    // while VpnService.Builder.addRoute requires the address to have all host
-                    // bits cleared. Canonicalize both assigned prefixes and advertised routes
-                    // before passing them to Android.
-                    val prefixBlock = parsed.toPrefixBlock(prefix)
-                    Route(
-                        "${prefixBlock.toNormalizedString()}/$prefix",
-                        prefix,
-                        metric,
-                        network.networkId,
-                        prefixBlock.toInetAddress()
-                    )
-                } catch (_: Exception) { null }
-            }
+        zeroTierVpnRoutes(zeroTierManager.state.value.networks).forEach { route ->
+            builder.addRoute(route.address, route.prefix)
         }
-        // Android's Builder is prefix-based, so duplicate targets use the same winner as the
-        // Firestack route selector: lowest metric, then lexicographically smallest NWID.
-        candidates.groupBy { it.cidr }.values.map { group ->
-            group.sortedWith(compareBy<Route>({ it.prefix * -1 }, { it.metric }, { it.networkId })).first()
-        }.sortedWith(compareBy<Route>({ it.prefix * -1 }, { it.metric }, { it.networkId }))
-            .forEach { route -> builder.addRoute(route.address, route.prefix) }
         return builder
     }
 
