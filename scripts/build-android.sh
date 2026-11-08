@@ -26,7 +26,7 @@ for arg in "$@"; do
     --install) INSTALL=1 ;;
     -h|--help)
       echo "Usage: $0 [--install]"
-      echo "Build and test the F-Droid debug APK; --install also installs it on the ADB-connected device via ssh flip7."
+      echo "Build and test the F-Droid debug APK; --install installs it via USB ADB and copies zerotier-cli to Termux through a USB-forwarded SSH connection."
       exit 0
       ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
@@ -90,22 +90,74 @@ if (( INSTALL )); then
     echo "Expected APK not found: $APK" >&2
     exit 1
   fi
+  ADB_BIN=${ADB_BIN:-$ANDROID_HOME/platform-tools/adb}
+  if [[ ! -x "$ADB_BIN" ]]; then ADB_BIN=$(command -v adb || true); fi
+  if [[ -z "$ADB_BIN" || ! -x "$ADB_BIN" ]]; then
+    echo "ADB not found; install Android platform-tools or set ADB_BIN." >&2
+    exit 2
+  fi
+
+  USB_SERIALS=()
+  while read -r serial state details; do
+    if [[ "$state" == "device" && "$details" == *usb:* ]]; then
+      USB_SERIALS+=("$serial")
+    fi
+  done < <("$ADB_BIN" devices -l | tail -n +2)
+
+  ADB_SERIAL=${ADB_SERIAL:-}
+  if [[ -n "$ADB_SERIAL" ]]; then
+    found_usb_serial=0
+    for serial in "${USB_SERIALS[@]}"; do
+      if [[ "$serial" == "$ADB_SERIAL" ]]; then found_usb_serial=1; break; fi
+    done
+    if (( ! found_usb_serial )); then
+      echo "ADB_SERIAL=$ADB_SERIAL is not a connected USB ADB device." >&2
+      exit 2
+    fi
+  elif (( ${#USB_SERIALS[@]} == 1 )); then
+    ADB_SERIAL=${USB_SERIALS[0]}
+  elif (( ${#USB_SERIALS[@]} == 0 )); then
+    echo "No USB ADB device found. Connect Flip7 over USB debugging, or set ADB_SERIAL to a connected USB device." >&2
+    exit 2
+  else
+    printf 'Multiple USB ADB devices found (%s); set ADB_SERIAL to the intended device.\n' "${USB_SERIALS[*]}" >&2
+    exit 2
+  fi
+
   ADB_SSH_TARGET=${ADB_SSH_TARGET:-flip7}
-  ADB_SSH_HOST=${ADB_SSH_HOST:-10.16.78.64}
-  # Keep using flip7's pre-existing SSH host-key entry while forcing the TCP destination to its LAN IP.
+  # This identifies the known host key only; SSH traffic uses USB ADB forwarding.
   ADB_SSH_HOSTKEY_ALIAS=${ADB_SSH_HOSTKEY_ALIAS:-'[192.168.192.7]:8022'}
   ADB_SSH_CONFIG=${ADB_SSH_CONFIG:-$HOME/.ssh/config}
   SSH_OPTIONS=()
   if [[ -f "$ADB_SSH_CONFIG" ]]; then SSH_OPTIONS=(-F "$ADB_SSH_CONFIG"); fi
-  REMOTE_APK=${REMOTE_APK:-/data/data/com.termux/files/usr/tmp/rethink-fdroid-full-debug.apk}
   REMOTE_CLI=${REMOTE_CLI:-/data/data/com.termux/files/usr/tmp/zerotier-cli}
-  scp "${SSH_OPTIONS[@]}" -o "HostName=$ADB_SSH_HOST" -o "HostKeyAlias=$ADB_SSH_HOSTKEY_ALIAS" \
+
+  echo "Installing $APK over USB ADB ($ADB_SERIAL)..."
+  "$ADB_BIN" -s "$ADB_SERIAL" install -r "$APK"
+  "$ADB_BIN" -s "$ADB_SERIAL" shell pm path com.celzero.bravedns
+
+  ADB_FORWARD_PORT=$("$ADB_BIN" -s "$ADB_SERIAL" forward tcp:0 tcp:8022)
+  if [[ ! "$ADB_FORWARD_PORT" =~ ^[0-9]+$ ]]; then
+    echo "ADB returned an invalid USB-forwarded port: $ADB_FORWARD_PORT" >&2
+    exit 2
+  fi
+  cleanup_usb_forward() {
+    "$ADB_BIN" -s "$ADB_SERIAL" forward --remove "tcp:$ADB_FORWARD_PORT" >/dev/null 2>&1 || true
+  }
+  trap cleanup_usb_forward EXIT
+
+  USB_SSH_OPTIONS=(
+    "${SSH_OPTIONS[@]}"
+    -o HostName=127.0.0.1
+    -o "HostKeyAlias=$ADB_SSH_HOSTKEY_ALIAS"
+    -o BatchMode=yes
+    -o ConnectTimeout=10
+  )
+  echo "Copying zerotier-cli to Termux over the USB ADB tunnel..."
+  scp "${USB_SSH_OPTIONS[@]}" -P "$ADB_FORWARD_PORT" \
     "$CLI_BINARY" "$ADB_SSH_TARGET:$REMOTE_CLI"
-  echo "Installing $APK on $ADB_SSH_TARGET via LAN $ADB_SSH_HOST..."
-  scp "${SSH_OPTIONS[@]}" -o "HostName=$ADB_SSH_HOST" -o "HostKeyAlias=$ADB_SSH_HOSTKEY_ALIAS" "$APK" "$ADB_SSH_TARGET:$REMOTE_APK"
-  ssh "${SSH_OPTIONS[@]}" -o "HostName=$ADB_SSH_HOST" -o "HostKeyAlias=$ADB_SSH_HOSTKEY_ALIAS" "$ADB_SSH_TARGET" \
-    "install -Dm755 '$REMOTE_CLI' \"\$PREFIX/bin/zerotier-cli\" && \"\$PREFIX/bin/zerotier-cli\" -v && \
-     adb install -r '$REMOTE_APK' && adb shell pm path com.celzero.bravedns"
+  ssh "${USB_SSH_OPTIONS[@]}" -p "$ADB_FORWARD_PORT" "$ADB_SSH_TARGET" \
+    "install -Dm755 '$REMOTE_CLI' \"\$PREFIX/bin/zerotier-cli\" && \"\$PREFIX/bin/zerotier-cli\" -v"
 fi
 
 exit "$TEST_STATUS"
